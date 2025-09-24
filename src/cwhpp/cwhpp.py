@@ -443,20 +443,26 @@ def create_price_model_pipeline(
 
 class TwoStepsModel(BaseEstimator):
     """
-    A custom estimator that combines two steps: transformation of the target and housing price prediction.
+    A custom estimator that combines two steps: transformation of the target and housing price modelling.
     """
     def __init__(
         self,
         model=lightgbm.LGBMRegressor(),
         log_transform=None,
         price_sq_meter=None,
-        presence_coordinates=True
+        presence_coordinates=True,
+        floor_area_name=None
     ):
+
+        if price_sq_meter is True and floor_area_name is None:
+            raise ValueError("The model uses price per square meter, but the name of the floor area variable is missing")
+
         self.log_transform = log_transform
         self.price_sq_meter = price_sq_meter
         self.feature_names_in = None
         self.is_price_model_fitted = False
         self.presence_coordinates = presence_coordinates
+        self.floor_area_name = floor_area_name
 
         print("    Initiating an unfitted price prediction pipeline.")
         self.price_model_pipeline = create_price_model_pipeline(
@@ -605,7 +611,7 @@ class TwoStepsModel(BaseEstimator):
 
         # Compute the price per square meter
         if self.price_sq_meter:
-            y_transform = y_transform / X["dsupdc"].to_numpy()
+            y_transform = y_transform / X[self.floor_area_name].to_numpy()
         # Take the logarithm
         if self.log_transform:
             y_transform = np.log(y_transform)
@@ -619,7 +625,7 @@ class TwoStepsModel(BaseEstimator):
             y = np.exp(y)
         # Multiply by the floor area if the model uses the price per square meter
         if self.price_sq_meter:
-            y = y * X["dsupdc"].to_numpy()
+            y = y * X[self.floor_area_name].to_numpy()
 
         return y
 
