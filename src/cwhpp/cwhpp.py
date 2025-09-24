@@ -270,7 +270,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
             ]
 
         self.rotated_coordinates_names = rotated_coordinates_names
-        self.names_features_sortie = X.columns.tolist() if isinstance(X, pd.DataFrame) else X.columns
+        self.names_features_output = X.columns.tolist() if isinstance(X, pd.DataFrame) else X.columns
         return X
 
     def fit_transform(self, X, y=None):
@@ -294,7 +294,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
         Returns:
         list: Names of the transformed features.
         """
-        return self.names_features_sortie
+        return self.names_features_output
 
 class ConvertDateToInteger(BaseEstimator, TransformerMixin):
     """
@@ -322,7 +322,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         """
         self.transaction_date_name = transaction_date_name
         self.reference_date = reference_date
-        self.names_features_sortie = None
+        self.names_features_output = None
         return self
 
     def fit(self, X, y=None):
@@ -375,9 +375,9 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
 
         # Store feature names
         if isinstance(X, pl.DataFrame):
-            self.names_features_sortie = X.columns
+            self.names_features_output = X.columns
         if isinstance(X, pd.DataFrame):
-            self.names_features_sortie = X.columns.tolist()
+            self.names_features_output = X.columns.tolist()
         
         # Return a Pandas dataframe because LightGBM does not accept 
         # Polars dataframes (yet)
@@ -404,7 +404,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         Returns:
         list: Names of the transformed features.
         """
-        return self.names_features_sortie
+        return self.names_features_output
 
 def create_price_model_pipeline(
     model=lightgbm.LGBMRegressor(), 
