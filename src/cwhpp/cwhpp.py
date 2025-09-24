@@ -392,6 +392,9 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         return X
 
     def fit_transform(self, X, y=None):
+        """
+        Apply the transform and the fit methods to the data.
+        """
 
         # Fit the transformer
         self.fit(X, y)
@@ -419,6 +422,7 @@ def create_price_model_pipeline(
 
     Parameters:
     model (BaseEstimator, optional): Model to use for the housing prices modelling. Defaults to LGBMRegressor.
+    presence_coordinates (boolean, default = True): do features contain geographical coordinates of housing units?
 
     Returns:
     Pipeline: The constructed pipeline.
@@ -447,7 +451,61 @@ def create_price_model_pipeline(
 
 class TwoStepsModel(BaseEstimator):
     """
-    A custom estimator that combines two steps: transformation of the target and housing price modelling.
+    A custom estimator for housing price prediction with optional target transformation.
+
+    This model supports:
+      - log-transform of the target variable,
+      - normalization of price by floor area (price per square meter),
+      - pipeline preprocessing of features (with or without coordinates),
+      - automatic retransformation bias correction (Duan, 1983; Miller, 1984).
+
+    Parameters
+    ----------
+    model : estimator, default=lightgbm.LGBMRegressor()
+        The regression model to use (must follow the scikit-learn API).
+    
+    log_transform : bool, optional (default=None)
+        If True, applies a logarithmic transformation to the target variable.
+
+    price_sq_meter : bool, optional (default=None)
+        If True, converts the target variable to price per square meter.
+        Requires `floor_area_name` to be provided.
+
+    presence_coordinates : bool, default=True
+        If True, include coordinate-related preprocessing in the pipeline.
+
+    floor_area_name : str, optional (default=None)
+        Column name for floor area, required if `price_sq_meter=True`.
+
+    Attributes
+    ----------
+    price_model_pipeline : sklearn.Pipeline
+        The full pipeline combining preprocessing and the regression model.
+
+    preprocessor : sklearn.TransformerMixin
+        The preprocessing step of the pipeline (all steps before the model).
+
+    model : estimator
+        The final regression model from the pipeline.
+
+    model_features : list of str
+        List of feature names used for training.
+
+    is_price_model_fitted : bool
+        Indicates if the model has been fitted.
+
+    RMSE : float
+        Root mean squared error of the fitted model (if log-transform is applied).
+
+    smearing_factor : float
+        Duan’s smearing factor, used for retransformation bias correction (if log-transform is applied).
+
+    source_RMSE : {"Train", "Val"}
+        Indicates whether RMSE was computed on training or validation data.
+
+    source_correction_terms : {"Train", "Val"}
+        Indicates the data source used to compute retransformation correction factors.
+
     """
     def __init__(
         self,
@@ -486,7 +544,7 @@ class TwoStepsModel(BaseEstimator):
         self,
         X, y,
         model_features = None,
-        X_val = None, 
+        X_val = None,
         y_val = None,
         sample_weight=None,
         sample_weight_val=None,
@@ -494,8 +552,50 @@ class TwoStepsModel(BaseEstimator):
         log_evaluation_period = 100,
         early_stopping_rounds = 25,
         **kwargs
-        ):
+    ):
+        """
+        Fit the TwoStepsModel.
 
+        Parameters
+        ----------
+        X : pd.DataFrame or pl.DataFrame
+            Feature matrix for training.
+
+        y : array-like
+            Target variable.
+
+        model_features : list of str, optional
+            Explicit list of feature names to use. If None, inferred from `X`.
+
+        X_val : pd.DataFrame or pl.DataFrame, optional
+            Validation feature matrix.
+
+        y_val : array-like, optional
+            Validation target variable.
+
+        sample_weight : array-like, optional
+            Sample weights for training data.
+
+        sample_weight_val : array-like, optional
+            Sample weights for validation data.
+
+        verbose : bool, default=True
+            Whether to print progress messages.
+
+        log_evaluation_period : int, default=100
+            Period for LightGBM logging callbacks.
+
+        early_stopping_rounds : int, default=25
+            Number of rounds for LightGBM early stopping.
+
+        **kwargs : dict
+            Additional arguments passed to the underlying estimator's `fit` method.
+
+        Returns
+        -------
+        self : TwoStepsModel
+            Fitted estimator.
+        """
         # Store feature names
         if model_features is not None:
             self.model_features = model_features
@@ -612,6 +712,22 @@ class TwoStepsModel(BaseEstimator):
         return self
 
     def transform(self, X, y):
+        """
+        Apply target transformation according to the model specification.
+
+        Parameters
+        ----------
+        X : pd.DataFrame or pl.DataFrame
+            Feature matrix, used if `price_sq_meter=True`.
+
+        y : array-like
+            Target values to transform.
+
+        Returns
+        -------
+        y_transformed : np.ndarray
+            Transformed target values.
+        """
         y_transform = np.copy(y)
 
         # Compute the price per square meter
@@ -623,8 +739,22 @@ class TwoStepsModel(BaseEstimator):
         return y_transform
 
     def inverse_transform(self, X, y):
-        # Retransform y to get a market value estimate
+        """
+        Invert the target transformation according to the model specification.
 
+        Parameters
+        ----------
+        X : pd.DataFrame or pl.DataFrame
+            Feature matrix, used if `price_sq_meter=True`.
+
+        y : array-like
+            Transformed predictions to invert.
+
+        Returns
+        -------
+        y_original : np.ndarray
+            Predictions in the original target scale.
+        """
         # Take the exponential if the model uses log
         if self.log_transform:
             y = np.exp(y)
@@ -643,6 +773,35 @@ class TwoStepsModel(BaseEstimator):
         verbose: bool = True,
         **kwargs
     ):
+
+        """
+        Predict with the fitted model.
+
+        Parameters
+        ----------
+        X : pd.DataFrame or pl.DataFrame
+            Feature matrix.
+
+        iteration_range : tuple, optional
+            Iteration range for boosting models (LightGBM only).
+
+        add_retransformation_correction : bool, default=True
+            Whether to apply retransformation bias correction if `log_transform=True`.
+
+        retransformation_method : {"Duan", "Miller"}, default="Duan"
+            Method for retransformation correction.
+
+        verbose : bool, default=True
+            Whether to print progress messages.
+
+        **kwargs : dict
+            Additional arguments passed to the underlying estimator's `predict` method.
+
+        Returns
+        -------
+        y_pred : np.ndarray
+            Predicted values in the original target scale.
+        """
 
         if add_retransformation_correction is True and retransformation_method not in ["Duan", "Miller"]:
             raise ValueError("The retransformation_method argument must be either features 'Duan' or 'Miller'.")
