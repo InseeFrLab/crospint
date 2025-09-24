@@ -33,6 +33,7 @@ from sklearn.pipeline import Pipeline
 from sklearn import metrics
 import lightgbm
 import daal4py as d4p
+import cpuinfo
 
 ############################################################
 # TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
