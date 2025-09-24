@@ -4,8 +4,8 @@ requires-python = ">=3.12"
 
 [[package]]
 name = "cwhpp"
-version = "0.1.0"
-source = { virtual = "." }
+version = "0.1.1.dev0"
+source = { editable = "." }
 dependencies = [
     { name = "lightgbm" },
     { name = "pandas" },
