@@ -58,39 +58,6 @@ class PatchedLGBMRegressor(lightgbm.LGBMRegressor):
 # TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
 ############################################################
 
-# A custom train-test split
-def train_test_split_by_id(df, id_column, test_size=0.2, random_state=None):
-    """
-    Perform train-test split ensuring that a share of unique observations (based on `id_column`)
-    are entirely excluded from the train set.
-    
-    Parameters:
-    - df (pl.DataFrame): Input Polars DataFrame
-    - id_column (str): Column name used to identify duplicates
-    - test_size (float): Proportion of the dataset to include in the test split (default 0.2)
-    - random_state (int): Random seed for reproducibility (default None)
-    
-    Returns:
-    - train (pl.DataFrame): Training set
-    - test (pl.DataFrame): Test set
-    """
-    # Set the random seed for reproducibility if provided
-    if random_state is not None:
-        np.random.seed(random_state)
-
-    # Get unique identifier values
-    unique_ids = df.select(id_column).unique()
-
-    # Select test_size% of the unique idlocal values to exclude from the training set
-    excluded_ids = unique_ids.sample(fraction=test_size, seed=random_state).to_series().to_list()
-
-    # Filter the original DataFrame into two sets
-    test_set = df.filter(pl.col(id_column).is_in(excluded_ids))
-    train_set = df.filter(~pl.col(id_column).is_in(excluded_ids))
-    
-    return train_set, test_set
-
-
 def rotate_point(x, y, angle, center=None):
     """
     Rotate a 2D point counterclockwise by a given angle (in degrees) around a given center.
@@ -118,7 +85,8 @@ def rotate_point(x, y, angle, center=None):
 class ValidateFeatures(BaseEstimator, TransformerMixin):
     """
     A custom transformer to validate features
-
+    This transformer checks that all model features are present in the data
+    and returns a dataframe with the right features in the right order
     Parameters: None
     """
     def __init__(self):
@@ -302,7 +270,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
             ]
 
         self.rotated_coordinates_names = rotated_coordinates_names
-        self.names_features_sortie = X.columns.tolist() if isinstance(X, pd.DataFrame) else X.columns
+        self.names_features_output = X.columns.tolist() if isinstance(X, pd.DataFrame) else X.columns
         return X
 
     def fit_transform(self, X, y=None):
@@ -326,7 +294,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
         Returns:
         list: Names of the transformed features.
         """
-        return self.names_features_sortie
+        return self.names_features_output
 
 class ConvertDateToInteger(BaseEstimator, TransformerMixin):
     """
@@ -354,7 +322,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         """
         self.transaction_date_name = transaction_date_name
         self.reference_date = reference_date
-        self.names_features_sortie = None
+        self.names_features_output = None
         return self
 
     def fit(self, X, y=None):
@@ -407,9 +375,9 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
 
         # Store feature names
         if isinstance(X, pl.DataFrame):
-            self.names_features_sortie = X.columns
+            self.names_features_output = X.columns
         if isinstance(X, pd.DataFrame):
-            self.names_features_sortie = X.columns.tolist()
+            self.names_features_output = X.columns.tolist()
         
         # Return a Pandas dataframe because LightGBM does not accept 
         # Polars dataframes (yet)
@@ -436,7 +404,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         Returns:
         list: Names of the transformed features.
         """
-        return self.names_features_sortie
+        return self.names_features_output
 
 def create_price_model_pipeline(
     model=lightgbm.LGBMRegressor(), 
@@ -475,20 +443,26 @@ def create_price_model_pipeline(
 
 class TwoStepsModel(BaseEstimator):
     """
-    A custom estimator that combines two steps: transformation of the target and housing price prediction.
+    A custom estimator that combines two steps: transformation of the target and housing price modelling.
     """
     def __init__(
         self,
         model=lightgbm.LGBMRegressor(),
         log_transform=None,
         price_sq_meter=None,
-        presence_coordinates=True
+        presence_coordinates=True,
+        floor_area_name=None
     ):
+
+        if price_sq_meter is True and floor_area_name is None:
+            raise ValueError("The model uses price per square meter, but the name of the floor area variable is missing")
+
         self.log_transform = log_transform
         self.price_sq_meter = price_sq_meter
         self.feature_names_in = None
         self.is_price_model_fitted = False
         self.presence_coordinates = presence_coordinates
+        self.floor_area_name = floor_area_name
 
         print("    Initiating an unfitted price prediction pipeline.")
         self.price_model_pipeline = create_price_model_pipeline(
@@ -610,23 +584,24 @@ class TwoStepsModel(BaseEstimator):
 
         print(f"    Training time of the price prediction model: {end_time - start_time} seconds") if verbose else None
 
-        # Compute the model's RMSE and correction term (useful for the retransformation correction)
-        print("    Compute the model's RMSE") if verbose else None
-        if X_val is not None and y_val is not None:
-            y_pred = self.price_model_pipeline.predict(X_val)
-            self.RMSE = math.sqrt(metrics.mean_squared_error(y_val_transformed, y_pred))
-            self.correction_term = np.mean(np.exp(y_val_transformed - y_pred))
-            self.source_RMSE = "Val"
-            self.source_correction_term = "Val"
-        else:
-            y_pred = self.price_model_pipeline.predict(X)
-            self.RMSE = math.sqrt(metrics.mean_squared_error(y_transformed, y_pred))
-            self.correction_term = np.mean(np.exp(y_transformed - y_pred))
-            self.source_RMSE = "Train"
-            self.source_correction_term = "Train"
+        if self.log_transform:
+            # Compute the model's RMSE and correction term (useful for the retransformation correction)
+            print("    Compute the model's correction terms") if verbose else None
+            if X_val is not None and y_val is not None:
+                y_pred = self.price_model_pipeline.predict(X_val)
+                self.RMSE = math.sqrt(metrics.mean_squared_error(y_val_transformed, y_pred))
+                self.smearing_factor = np.mean(np.exp(y_val_transformed - y_pred))
+                self.source_RMSE = "Val"
+                self.source_correction_terms = "Val"
+            else:
+                y_pred = self.price_model_pipeline.predict(X)
+                self.RMSE = math.sqrt(metrics.mean_squared_error(y_transformed, y_pred))
+                self.smearing_factor = np.mean(np.exp(y_transformed - y_pred))
+                self.source_RMSE = "Train"
+                self.source_correction_terms = "Train"
 
-        print("    RMSE = ", self.RMSE)
-        print("    correction_term = ", self.correction_term)
+            print("    RMSE = ", self.RMSE)
+            print("    Smearing factor = ", self.smearing_factor)
 
         self.is_price_model_fitted = True
 
@@ -637,7 +612,7 @@ class TwoStepsModel(BaseEstimator):
 
         # Compute the price per square meter
         if self.price_sq_meter:
-            y_transform = y_transform / X["dsupdc"].to_numpy()
+            y_transform = y_transform / X[self.floor_area_name].to_numpy()
         # Take the logarithm
         if self.log_transform:
             y_transform = np.log(y_transform)
@@ -651,11 +626,22 @@ class TwoStepsModel(BaseEstimator):
             y = np.exp(y)
         # Multiply by the floor area if the model uses the price per square meter
         if self.price_sq_meter:
-            y = y * X["dsupdc"].to_numpy()
+            y = y * X[self.floor_area_name].to_numpy()
 
         return y
 
-    def predict(self, X, iteration_range=None, add_RMSE_correction=True, verbose=True, **kwargs):
+    def predict(
+        self,
+        X, 
+        iteration_range=None,
+        add_retransformation_correction: bool = True,
+        retransformation_method: str = "Duan",
+        verbose: bool = True,
+        **kwargs
+    ):
+
+        if add_retransformation_correction is True and retransformation_method not in ["Duan", "Miller"]:
+            raise ValueError("The retransformation_method argument must be either features 'Duan' or 'Miller'.")
 
         # Predict the local average
         print("    Predicting the target") if verbose else None
@@ -665,13 +651,22 @@ class TwoStepsModel(BaseEstimator):
         print("    Invert the target transformation") if verbose and (self.price_sq_meter or self.log_transform) else None
         y_pred = self.inverse_transform(X, y_pred)
 
-        # Add the Duan's 1983 smearing factor correction
-        if add_RMSE_correction:
-            print("    The models includes a correction of the retransformation bias.") if verbose else None
-            global_correction = self.correction_term
-            print("    Average correction = ", round(100 * (global_correction - 1), 2), '%')
-            y_pred = y_pred * global_correction
+        if self.log_transform:
+            if add_retransformation_correction:
+                print("    The models includes a correction of the retransformation bias.") if verbose else None
+                if retransformation_method == "Duan":
+                    print("    The retransformation bias is corrected using Duan's 1983 smearing factor.") if verbose else None
+                    # Use the Duan's 1983 smearing factor correction
+                    global_correction = self.smearing_factor
+                if retransformation_method == "Miller":
+                    print("    The retransformation bias is corrected using Miller's 1984 correction factor.") if verbose else None
+                    # Use the Miller's 1984 retransformation correction
+                    global_correction = np.exp((self.RMSE ** 2) / 2)
+                print("    Average correction = ", round(100 * (global_correction - 1), 2), '%')
+                y_pred = y_pred * global_correction
+            else:
+                print("    There is no correction for the retransformation bias.") if verbose else None
         else:
-            print("    The models includes no correction of the retransformation bias.") if verbose else None
+            print("    The model has no log-transformation.") if verbose else None
 
         return y_pred
