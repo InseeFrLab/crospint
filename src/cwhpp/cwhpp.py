@@ -667,6 +667,6 @@ class TwoStepsModel(BaseEstimator):
             else:
                 print("    There is no correction for the retransformation bias.") if verbose else None
         else:
-            print("    The models includes no correction of the retransformation bias.") if verbose else None
+            print("    The model has no log-transformation.") if verbose else None
 
         return y_pred
