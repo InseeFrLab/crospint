@@ -600,8 +600,8 @@ class TwoStepsModel(BaseEstimator):
                 self.source_RMSE = "Train"
                 self.source_correction_terms = "Train"
 
-        print("    RMSE = ", self.RMSE)
-        print("    correction_term = ", self.correction_term)
+            print("    RMSE = ", self.RMSE)
+            print("    Smearing factor = ", self.smearing_factor)
 
         self.is_price_model_fitted = True
 
