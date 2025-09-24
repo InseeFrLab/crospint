@@ -85,7 +85,8 @@ def rotate_point(x, y, angle, center=None):
 class ValidateFeatures(BaseEstimator, TransformerMixin):
     """
     A custom transformer to validate features
-
+    This transformer checks that all model features are present in the data
+    and returns a dataframe with the right features in the right order
     Parameters: None
     """
     def __init__(self):
