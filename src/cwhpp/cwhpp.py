@@ -740,21 +740,17 @@ def optimize_model(
 
 
 def predict_market_value(
-    data: pl.DataFrame = None,
-    model = None,
-    date_market_value = None, 
-    add_RMSE_correction = False, 
+    data: pl.DataFrame,
+    model,
+    date_market_value = None,
+    add_retransformation_correction = False,
     **kwargs
 ):
     # Extract the name of the feature containing the transaction name
     transaction_date_name = model.price_model_pipeline["date_conversion"].transaction_date_name
-    if model is None:
-        raise ValueError("The model is missing.")
 
     if date_market_value is not None:
-        print(f'    Predicting market values using date {date_market_value}.')
-        data = (
-            data
+        print(f'    Predicting market values at date {date_market_value}.')
             .with_columns(
                 pl.lit(date_market_value).str.to_date(format = '%Y-%m-%d').alias(transaction_date_name),
                 pl.lit(date_market_value[0:4]).str.to_integer().alias("anneemut"),
