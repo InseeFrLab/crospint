@@ -839,6 +839,14 @@ def optimize_model(
     model,
     verbose: bool = True
 ):
+    """
+    This function optimizes the model for fast inference.
+
+    So far, this function works only for Intel CPUs, using the Insel OneDAL library.
+
+    This optimization does not work if trees are very deep (more than 20 for instance) or
+    if the model uses the native support for categorical variables.
+    """
 
     # Detect if available CPUs are Intel CPUs 
     vendor = cpuinfo.get_cpu_info().get('vendor_id_raw', '')
