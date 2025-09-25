@@ -33,33 +33,6 @@ from sklearn.pipeline import Pipeline
 from sklearn import metrics
 import lightgbm
 
-############################################################
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-############################################################
-
-# Rerunning with the PatchedRegressor fixes the issue
-class PatchedLGBMRegressor(lightgbm.LGBMRegressor):
-
-    @property
-    def feature_names_in_(self):
-        return self._feature_name
-
-    @feature_names_in_.setter
-    def feature_names_in_(self, x):
-        self._feature_name = x
-
-############################################################
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-############################################################
-
 def rotate_point(x, y, angle, center=None):
     """
     Rotate a 2D point counterclockwise by a given angle (in degrees) around a given center.
