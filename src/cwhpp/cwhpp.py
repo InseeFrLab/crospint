@@ -31,33 +31,6 @@ from sklearn import metrics
 import lightgbm
 import time
 
-############################################################
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-############################################################
-
-# Rerunning with the PatchedRegressor fixes the issue
-class PatchedLGBMRegressor(lightgbm.LGBMRegressor):
-
-    @property
-    def feature_names_in_(self):
-        return self._feature_name
-
-    @feature_names_in_.setter
-    def feature_names_in_(self, x):
-        self._feature_name = x
-
-############################################################
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-# TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE TEMPORAIRE 
-############################################################
-
 def rotate_point(x, y, angle, center=None):
     """
     Rotate a 2D point counterclockwise by a given angle (in degrees) around a given center.
@@ -548,10 +521,9 @@ class TwoStepsModel(BaseEstimator):
 
         start_time = time.monotonic()
         if str(self.price_model_pipeline[-1].__class__) in [
-            "<class 'lightgbm.sklearn.LGBMRegressor'>",
-            "<class 'functions.modelling_functions.PatchedLGBMRegressor'>"
+            "<class 'lightgbm.sklearn.LGBMRegressor'>"
         ]:
-            callbacks=[
+            callbacks = [
                 lightgbm.log_evaluation(period=log_evaluation_period),
                 lightgbm.early_stopping(stopping_rounds=early_stopping_rounds)
             ]
@@ -579,7 +551,7 @@ class TwoStepsModel(BaseEstimator):
                 X_transformed,
                 y_transformed,
                 sample_weight=sample_weight
-            )            
+            )        
 
         end_time = time.monotonic()
 
@@ -589,16 +561,14 @@ class TwoStepsModel(BaseEstimator):
             # Compute the model's RMSE and correction term (useful for the retransformation correction)
             print("    Compute the model's correction terms") if verbose else None
             if X_val is not None and y_val is not None:
-                y_pred = self.price_model_pipeline.predict(X_val)
-                self.RMSE = math.sqrt(metrics.mean_squared_error(y_val_transformed, y_pred))
-                self.smearing_factor = np.mean(np.exp(y_val_transformed - y_pred))
-                self.source_RMSE = "Val"
+                y_val_pred = self.price_model_pipeline.predict(X_val)
+                self.RMSE = math.sqrt(metrics.mean_squared_error(y_val_transformed, y_val_pred))
+                self.smearing_factor = np.mean(np.exp(y_val_transformed - y_val_pred))
                 self.source_correction_terms = "Val"
             else:
                 y_pred = self.price_model_pipeline.predict(X)
                 self.RMSE = math.sqrt(metrics.mean_squared_error(y_transformed, y_pred))
                 self.smearing_factor = np.mean(np.exp(y_transformed - y_pred))
-                self.source_RMSE = "Train"
                 self.source_correction_terms = "Train"
 
             print("    RMSE = ", self.RMSE)
