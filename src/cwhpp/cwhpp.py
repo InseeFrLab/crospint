@@ -30,6 +30,7 @@ from sklearn import metrics
 import lightgbm
 import time
 
+
 def rotate_point(x, y, angle, center=None):
     """
     Rotate a 2D point counterclockwise by a given angle (in degrees) around a given center.
@@ -76,7 +77,7 @@ class ValidateFeatures(BaseEstimator, TransformerMixin):
         Returns:
         self
         """
-
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
         self.feature_names = X.columns
         self.is_fitted = True
         return self
@@ -93,6 +94,7 @@ class ValidateFeatures(BaseEstimator, TransformerMixin):
         pl.DataFrame: dataframe with the right features in the right order.
         """
 
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
         features_X = X.columns
 
         missing_features = []
@@ -171,6 +173,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
         Returns:
         self
         """
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
         coordinates_names = self.coordinates_names
 
         # Raise an error if the coordinates are not correct
@@ -205,6 +208,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
         Returns:
         pl.DataFrame: Transformed data with additional rotated coordinates.
         """
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
         x_coord, y_coord = self.coordinates_names
         rotated_coordinates_names = [x_coord, y_coord]
 
@@ -296,6 +300,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         Returns:
         self
         """
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
         transaction_date_name = self.transaction_date_name
 
         # Raise an error if the transaction date is not in the data
@@ -320,6 +325,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         Returns:
         pl.DataFrame: Transformed data with integer representation of dates.
         """
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
         transaction_date_name = self.transaction_date_name
         reference_date = self.reference_date
 
@@ -352,15 +358,17 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         """
         return self.names_features_output
 
+
 def create_price_model_pipeline(
-    model=lightgbm.LGBMRegressor(), 
-    presence_coordinates = True
-    ):
+    model=lightgbm.LGBMRegressor(),
+    presence_coordinates=True
+):
     """
     Create a pipeline for housing prices modelling
 
     Parameters:
-    model (BaseEstimator, optional): Model to use for the housing prices modelling. Defaults to LGBMRegressor.
+    model (BaseEstimator, optional): Model to use for the housing prices modelling.
+    Defaults to LGBMRegressor.
 
     Returns:
     Pipeline: The constructed pipeline.
@@ -439,7 +447,10 @@ class TwoStepsModel(BaseEstimator):
         convert_to_pandas: bool = False,
         convert_to_pyarrow: bool = False,
         **kwargs
-        ):
+    ):
+
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
+        assert isinstance(X_val, pl.DataFrame), "X_val must be a Polars DataFrame"
 
         # Store feature names
         if model_features is not None:
@@ -455,7 +466,6 @@ class TwoStepsModel(BaseEstimator):
 
         print(f"    Average observed value of the dependant variable after transformation: {np.mean(y_transformed)}") if verbose else None
 
-
         # Fit the preprocessor
         print("    Fit the preprocessor") if verbose else None
         self.preprocessor.fit(X.select(model_features), y)
@@ -463,13 +473,6 @@ class TwoStepsModel(BaseEstimator):
         # Transform the data with the preprocessor
         print("    Transform training data with the preprocessor") if verbose else None
         X_transformed = self.preprocessor.transform(X.select(model_features))
-
-        # Return a Pandas dataframe or Pyarrow Table because LightGBM does not accept 
-        # Polars dataframes (yet)
-        if convert_to_pandas:
-            X_transformed = X_transformed.to_pandas()
-        elif convert_to_pyarrow:
-            X_transformed = X_transformed.to_arrow()
         
         # Prepare validation data is any
         if X_val is not None and y_val is not None:
@@ -497,9 +500,8 @@ class TwoStepsModel(BaseEstimator):
             eval_names = ["Train"]
 
         start_time = time.monotonic()
-        if str(self.price_model_pipeline[-1].__class__) in [
-            "<class 'lightgbm.sklearn.LGBMRegressor'>"
-        ]:
+        if "LGBMRegressor" in str(self.price_model_pipeline[-1].__class__):
+            print("    Let's train a LGBMRegressor!")
             callbacks = [
                 lightgbm.log_evaluation(period=log_evaluation_period),
                 lightgbm.early_stopping(stopping_rounds=early_stopping_rounds)
@@ -522,7 +524,8 @@ class TwoStepsModel(BaseEstimator):
                 **kwargs
             )
 
-        elif str(self.price_model_pipeline[-1].__class__) == "<class 'sklearnex.ensemble._forest.RandomForestRegressor'>":
+        elif "RandomForestRegressor" in str(self.price_model_pipeline[-1].__class__):
+            print("    Let's train a RandomForestRegressor!")
             print("    Training the model") if verbose else None
             self.price_model_pipeline[-1].fit(
                 X_transformed,
@@ -580,7 +583,7 @@ class TwoStepsModel(BaseEstimator):
 
     def predict(
         self,
-        X, 
+        X,
         iteration_range=None,
         add_retransformation_correction: bool = True,
         retransformation_method: str = "Duan",
@@ -588,8 +591,14 @@ class TwoStepsModel(BaseEstimator):
         **kwargs
     ):
 
-        if add_retransformation_correction is True and retransformation_method not in ["Duan", "Miller"]:
-            raise ValueError("The retransformation_method argument must be either features 'Duan' or 'Miller'.")
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
+        assert isinstance(add_retransformation_correction, bool), \
+            "add_retransformation_correction must be True or False"
+
+        if add_retransformation_correction and retransformation_method not in ["Duan", "Miller"]:
+            raise ValueError(
+                "The retransformation_method argument must be either features 'Duan' or 'Miller'."
+            )
 
         # Predict the local average
         print("    Predicting the target") if verbose else None
