@@ -486,8 +486,6 @@ but the name of the floor area variable is missing")
         verbose=True,
         log_evaluation_period=100,
         early_stopping_rounds=25,
-        convert_to_pandas: bool = False,
-        convert_to_pyarrow: bool = False,
         **kwargs
     ):
 
@@ -524,13 +522,6 @@ but the name of the floor area variable is missing")
             print("    Transform validation data") if verbose else None
             X_val_transformed = self.preprocessor.transform(X_val.select(model_features))
             y_val_transformed = self.transform(X_val, y_val)
-
-            # Return a Pandas dataframe or Pyarrow Table because LightGBM does not accept 
-            # Polars dataframes (yet)
-            if convert_to_pandas:
-                X_val_transformed = X_val_transformed.to_pandas()
-            elif convert_to_pyarrow:
-                X_val_transformed = X_val_transformed.to_arrow()
 
             eval_set = [
                 (X_transformed, y_transformed),
