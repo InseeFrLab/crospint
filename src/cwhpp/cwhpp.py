@@ -191,7 +191,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
         # Raise an error if the number of axis is missing
         if self.number_axis is None:
             raise ValueError("Argument number_axis is missing.")
-        
+
         x_coord, y_coord = self.coordinates_names
         # Compute the mean coordinates of the data
         self.center = (X[x_coord].mean(), X[y_coord].mean())
@@ -222,7 +222,7 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
                 angle=360 * (i / self.number_axis),
                 center=self.center
             )
-         
+
             # Add the rotated coordinates to the data
             X = X.with_columns(
                 [
@@ -348,7 +348,7 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
 
     def transform(self, X: pl.DataFrame, y=None):
         """
-        Convert the transaction date to an integer representing the number of days 
+        Convert the transaction date to an integer representing the number of days
         since the reference date.
 
         Parameters:
@@ -435,10 +435,9 @@ def create_price_model_pipeline(
     return pipe
 
 
-
 class TwoStepsModel(BaseEstimator):
     """
-    A custom estimator that combines two steps: transformation of the target 
+    A custom estimator that combines two steps: transformation of the target
     and housing price modelling.
     """
     def __init__(
