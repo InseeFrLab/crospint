@@ -35,7 +35,7 @@ import datetime
 def rotate_point(x, y, angle, center=None):
     """
     Rotate a 2D point counterclockwise by a given angle (in degrees) around a given center.
-    
+
     Parameters:
     x (float or np.array): x-coordinate(s) to rotate.
     y (float or np.array): y-coordinate(s) to rotate.
@@ -54,6 +54,7 @@ def rotate_point(x, y, angle, center=None):
     yy = cy + dx * math.sin(ang_rad) + dy * math.cos(ang_rad)
 
     return xx, yy
+
 
 # A custom transformer to validate the features entering the housing prices pipeline
 class ValidateFeatures(BaseEstimator, TransformerMixin):
@@ -262,6 +263,12 @@ class AddCoordinatesRotation(BaseEstimator, TransformerMixin):
 
 
 def is_valid_ymd(date_str: [str, list]):
+    """
+    Validate whether a date or a list of dates are string in the 'YYYY-MM-DD' format
+
+    Returns:
+    list: Names of the transformed features.
+    """
     if isinstance(date_str, str):
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
@@ -459,7 +466,7 @@ but the name of the floor area variable is missing")
             model=model,
             presence_coordinates=presence_coordinates
         )
-    
+
         self.preprocessor = self.price_model_pipeline[:-1]
         self.model = self.price_model_pipeline[-1]
 
@@ -570,7 +577,7 @@ but the name of the floor area variable is missing")
                 X_transformed,
                 y_transformed,
                 sample_weight=sample_weight
-            )        
+            )
 
         end_time = time.monotonic()
 
