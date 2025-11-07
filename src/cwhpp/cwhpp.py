@@ -24,6 +24,7 @@
 import math
 import numpy as np
 import polars as pl
+import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 from sklearn import metrics
@@ -400,9 +401,72 @@ class ConvertDateToInteger(BaseEstimator, TransformerMixin):
         return self.names_features_output
 
 
+# A custom transformer to validate the features entering the housing prices pipeline
+class ConvertToPandas(BaseEstimator, TransformerMixin):
+    """
+    A custom transformer to transform a Polars DataFrame
+    Parameters: None
+    """
+    def __init__(self):
+        self.feature_names = None
+        self.is_fitted = False
+
+    def fit(self, X: pl.DataFrame, y=None):
+        """
+        Fit the transformer by doing nothing
+
+        Parameters:
+        X (pl.DataFrame): Input data.
+        y (optional): Target values, not used in fitting.
+
+        Returns:
+        self
+        """
+
+        self.feature_names = X.columns
+        self.is_fitted = True
+        return self
+
+    def transform(self, X: pl.DataFrame, y=None):
+        """
+        Convert to pandas
+
+        Parameters:
+        X (pl.DataFrame): Input data.
+        y (optional): Target values, not used in transformation.
+
+        Returns:
+        pd.DataFrame.
+        """
+        return X.to_pandas()
+
+    def fit_transform(self, X: pl.DataFrame, y=None):
+        """
+        Fit and transform the data in one step.
+
+        Parameters:
+        X (pl.DataFrame): Input data.
+        y (optional): Target values, not used in fitting.
+
+        Returns:
+        pd.DataFrame: Same data converted to pandas.
+        """
+        self.fit(X, y)
+        return self.transform(X, y)
+
+    def get_feature_names_out(self):
+        """
+
+        Returns:
+        list: Names of the features.
+        """
+        return self.feature_names
+
+
 def create_price_model_pipeline(
     model=lightgbm.LGBMRegressor(),
-    presence_coordinates=True
+    presence_coordinates=True,
+    convert_to_pandas_before_fit: bool = False
 ):
     """
     Create a pipeline for housing prices modelling
@@ -414,23 +478,46 @@ def create_price_model_pipeline(
     Returns:
     Pipeline: The constructed pipeline.
     """
-    if presence_coordinates:
-        pipe = Pipeline(
-            [
-                ("validate_features", ValidateFeatures()),
-                ("coord_rotation", AddCoordinatesRotation()),
-                ("date_conversion", ConvertDateToInteger()),
-                ("price_model", model)
-            ]
-        )
+    if convert_to_pandas_before_fit:
+        print("    Adding a step for Pandas conversion at the end of the preprocessing")
+
+        if presence_coordinates:
+            pipe = Pipeline(
+                [
+                    ("validate_features", ValidateFeatures()),
+                    ("coord_rotation", AddCoordinatesRotation()),
+                    ("date_conversion", ConvertDateToInteger()),
+                    ("pandas_converter", ConvertToPandas()),
+                    ("price_model", model)
+                ]
+            )
+        else:
+            pipe = Pipeline(
+                [
+                    ("validate_features", ValidateFeatures()),
+                    ("date_conversion", ConvertDateToInteger()),
+                    ("pandas_converter", ConvertToPandas()),
+                    ("price_model", model)
+                ]
+            )
     else:
-        pipe = Pipeline(
-            [
-                ("validate_features", ValidateFeatures()),
-                ("date_conversion", ConvertDateToInteger()),
-                ("price_model", model)
-            ]
-        )
+        if presence_coordinates:
+            pipe = Pipeline(
+                [
+                    ("validate_features", ValidateFeatures()),
+                    ("coord_rotation", AddCoordinatesRotation()),
+                    ("date_conversion", ConvertDateToInteger()),
+                    ("price_model", model)
+                ]
+            )
+        else:
+            pipe = Pipeline(
+                [
+                    ("validate_features", ValidateFeatures()),
+                    ("date_conversion", ConvertDateToInteger()),
+                    ("price_model", model)
+                ]
+            )
 
     return pipe
 
@@ -446,6 +533,7 @@ class TwoStepsModel(BaseEstimator):
         log_transform=None,
         price_sq_meter=None,
         presence_coordinates=True,
+        convert_to_pandas_before_fit=False,
         floor_area_name=None
     ):
 
@@ -458,12 +546,14 @@ but the name of the floor area variable is missing")
         self.feature_names_in = None
         self.is_price_model_fitted = False
         self.presence_coordinates = presence_coordinates
+        self.convert_to_pandas_before_fit = convert_to_pandas_before_fit
         self.floor_area_name = floor_area_name
 
         print("    Initiating an unfitted price prediction pipeline.")
         self.price_model_pipeline = create_price_model_pipeline(
             model=model,
-            presence_coordinates=presence_coordinates
+            presence_coordinates=presence_coordinates,
+            convert_to_pandas_before_fit=convert_to_pandas_before_fit
         )
 
         self.preprocessor = self.price_model_pipeline[:-1]
@@ -490,7 +580,8 @@ but the name of the floor area variable is missing")
     ):
 
         assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
-        assert isinstance(X_val, pl.DataFrame), "X_val must be a Polars DataFrame"
+        if X_val is not None:
+            assert isinstance(X_val, pl.DataFrame), "X_val must be a Polars DataFrame"
 
         # Store feature names
         if model_features is not None:
