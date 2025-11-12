@@ -838,8 +838,8 @@ def predict_market_value(
                 pl.lit(date_market_value[5:7]).str.to_integer().alias("moismut")
             )
         )
-    elif transaction_date_name in data.columns:
-        print(f'    Predicting market values using transaction date from the data.')
+    elif transaction_date_name in X.columns:
+        print('    Predicting market values using transaction date from the data.')
     else:
         raise ValueError("The date for market value prediction is missing.")
     
