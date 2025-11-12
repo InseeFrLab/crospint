@@ -549,6 +549,7 @@ but the name of the floor area variable is missing")
         self.presence_coordinates = presence_coordinates
         self.convert_to_pandas_before_fit = convert_to_pandas_before_fit
         self.floor_area_name = floor_area_name
+        self.calibration_table = None
 
         print("    Initiating an unfitted price prediction pipeline.")
         self.price_model_pipeline = create_price_model_pipeline(
