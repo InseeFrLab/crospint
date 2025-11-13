@@ -771,7 +771,7 @@ but the name of the floor area variable is missing")
             print("    The models includes a calibration step.") \
 
             # Calibrate the data
-            y_pred_calibrated = y_pred * self.calibration_function(y_pred)
+            y_pred_calibrated = y_pred * self.calibration_function.predict(y_pred)
 
             return y_pred_calibrated
 
