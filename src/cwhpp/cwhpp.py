@@ -672,10 +672,16 @@ but the name of the floor area variable is missing")
         if X_val is not None and y_val is not None:
             y_pred = self.price_model_pipeline.predict(X_val)
             y_true = y_val_transformed
+            # We need the prediction in level to build the calibration function
+            y_pred_level = self.inverse_transform(X_val, y_pred)
+            y_true_level = y_val
             self.source_correction_terms = "Val"
         else:
             y_pred = self.price_model_pipeline.predict(X)
             y_true = y_transformed
+            # We need the prediction in level to build the calibration function
+            y_pred_level = self.inverse_transform(X, y_pred)
+            y_true_level = y
             self.source_correction_terms = "Train"
 
         if self.log_transform:
@@ -691,8 +697,8 @@ but the name of the floor area variable is missing")
         # Fit the calibration function
         calibration_function = IsotonicRegression(out_of_bounds="clip")
         calibration_function.fit(
-            np.sort(y_pred),
-            np.sort(y_true) / np.sort(y_pred)
+            np.sort(y_pred_level),
+            np.sort(y_true_level) / np.sort(y_pred_level)
         )
         self.calibration_function = calibration_function
 
