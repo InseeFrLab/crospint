@@ -691,8 +691,8 @@ but the name of the floor area variable is missing")
         # Fit the calibration function
         calibration_function = IsotonicRegression(out_of_bounds="clip")
         calibration_function.fit(
-            sorted(y_pred),
-            sorted(y_true) / sorted(y_pred)
+            np.sort(y_pred),
+            np.sort(y_true) / np.sort(y_pred)
         )
         self.calibration_function = calibration_function
 
