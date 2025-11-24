@@ -920,13 +920,18 @@ in training")
                 df_time_calibration = (
                     X
                     .select(self.price_model_pipeline["date_conversion"].transaction_date_name)
+                    # join_where does not keep row order, so we need a row number to put
+                    # final predictions in the right order
+                    .with_row_count(name="row_identifier", offset=0)
                     .with_columns(pl.Series(y_pred_calibrated).alias("y_pred_calibrated"))
                     .join_where(
                         self.time_calibration_data,
                         pl.col(self.price_model_pipeline["date_conversion"].transaction_date_name) >= pl.col("start"),
                         pl.col(self.price_model_pipeline["date_conversion"].transaction_date_name) < pl.col("end")
                     )
-                    .with_columns(y_pred_calibrated=c.y_pred_calibrated*c.ratio)
+                    .with_columns(y_pred_calibrated=c.y_pred_calibrated * c.ratio)
+                    .sort("row_identifier")
+                    .drop("row_identifier")
                 )
                 if X.shape[0] != df_time_calibration.shape[0]:
                     raise ValueError("    There are duplicates in the time calibration step")
