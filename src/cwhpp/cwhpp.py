@@ -872,6 +872,7 @@ in training")
             .with_columns(
                 ratio=c.total_obs/c.total_pred
             )
+            .sort("start")
         )
 
     def predict(
