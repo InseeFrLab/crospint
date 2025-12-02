@@ -780,14 +780,14 @@ in training")
         self.calibration_data = None
 
         # Prepare data for calibration
-        y = y / floor_area
-        y_pred = y_pred / floor_area
+        y = np.log(y / floor_area)
+        y_pred = np.log(y_pred / floor_area)
 
         # Fit the calibration function on the whole distribution
         cal_func = IsotonicRegression(out_of_bounds="clip")
         cal_func.fit(
-            np.sort(np.log(y_pred)),
-            np.sort(np.log(y))
+            np.sort(y_pred),
+            np.sort(y)
         )
 
         if quantile_start > 0 or quantile_end < 1:
@@ -800,8 +800,8 @@ in training")
                 y_max=upper_bound
             )
             cal_func.fit(
-                np.sort(np.log(y_pred)),
-                np.sort(np.log(y))
+                np.sort(y_pred),
+                np.sort(y)
             )
 
         self.calibration_function = cal_func
