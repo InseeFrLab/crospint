@@ -787,8 +787,8 @@ in training")
         # Fit the calibration function on the whole distribution
         cal_func = IsotonicRegression(out_of_bounds="clip")
         cal_func.fit(
-            np.sort(y_pred),
-            np.sort(y) / np.sort(y_pred)
+            np.sort(np.log(y_pred)),
+            np.sort(np.log(y))
         )
         self.calibration_mode = calibration_mode
 
@@ -802,20 +802,24 @@ in training")
                 y_max=upper_bound
             )
             cal_func.fit(
-                np.sort(y_pred),
-                np.sort(y) / np.sort(y_pred)
+                np.sort(np.log(y_pred)),
+                np.sort(np.log(y))
             )
 
         self.calibration_function = cal_func
 
         # Store calibration data
         if self.calibration_mode == "price":
-            self.y_pred_calibrated = self.y_pred_calibration \
-                * self.calibration_function.predict(self.y_pred_calibration)
+            self.y_pred_calibrated = np.exp(
+                self.calibration_function.predict(np.log(self.y_pred_calibration))
+            )
         elif self.calibration_mode == "price_sqm":
-            self.y_pred_calibrated = self.y_pred_calibration \
-                * self.calibration_function.predict(
-                    self.y_pred_calibration / self.floor_area_calibration)
+            self.y_pred_calibrated = self.floor_area_calibration \
+                * np.exp(
+                    self.calibration_function.predict(
+                        np.log(self.y_pred_calibration / self.floor_area_calibration)
+                    )
+                )
 
         self.calibration_data = pl.DataFrame(
             {
@@ -910,11 +914,19 @@ in training")
 
             # Calibrate the data
             if self.calibration_mode == "price":
-                y_pred_calibrated = y_pred \
-                    * self.calibration_function.predict(y_pred)
+                y_pred_calibrated = np.exp(self.calibration_function.predict(np.log(y_pred)))
             elif self.calibration_mode == "price_sqm":
-                y_pred_calibrated = y_pred \
-                    * self.calibration_function.predict(y_pred / X[self.floor_area_name].to_numpy())
+                y_pred_calibrated = (
+                    X[self.floor_area_name].to_numpy() \
+                    # Compute calibrated price_sqm in level
+                    * np.exp(
+                        # Calibrate this raw prediction
+                        self.calibration_function.predict(
+                            # Start from raw pipeline prediction (log_price_sqm)
+                            np.log(y_pred / X[self.floor_area_name].to_numpy())
+                        )
+                    )
+                )
 
             if apply_time_calibration:
                 df_time_calibration = (
