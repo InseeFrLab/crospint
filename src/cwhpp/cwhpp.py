@@ -899,7 +899,7 @@ in training")
         X,
         iteration_range=None,
         add_retransformation_correction: bool = True,
-        retransformation_method: str = "Duan",
+        retransformation_method: str = None,
         apply_time_calibration: bool = False,
         verbose: bool = True,
         **kwargs
@@ -909,9 +909,9 @@ in training")
         assert isinstance(add_retransformation_correction, bool), \
             "add_retransformation_correction must be True or False"
 
-        if add_retransformation_correction and retransformation_method not in ["Duan", "Miller", "calibration"]:
+        if add_retransformation_correction and retransformation_method not in [None, "Duan", "Miller", "calibration"]:
             raise ValueError(
-                "The retransformation_method argument must be either 'Duan', 'Miller' or 'calibration'."
+                "The retransformation_method argument must be either None, 'Duan', 'Miller' or 'calibration'."
             )
 
         # Predict the local average
