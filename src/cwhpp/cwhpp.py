@@ -1034,7 +1034,7 @@ def predict_market_value(
     elif isinstance(X, pd.DataFrame):
         feature_names = X.columns.tolist()
 
-    if date_market_value is not None and date in feature_names:
+    if date_market_value is not None and date_name in feature_names:
         raise ValueError(f"Data should not contain the column {date_name} \
             if date_market_value is not None.")
 
@@ -1052,7 +1052,7 @@ def predict_market_value(
         print('    Predicting market values using transaction date from the data.')
     else:
         raise ValueError("The date for market value prediction is missing.")
-    
+
     # Predict market values
     market_values = model.predict(X, **kwargs)
 
