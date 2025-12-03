@@ -697,6 +697,7 @@ but the name of the floor area variable is missing")
             y_pred = self.pipe.predict(X_val)
             y_true = y_val_transformed
             # We need the prediction in level to build the calibration function
+            # The prediction contains no retransformation correction
             self.y_pred_calibration = self.inverse_transform(X_val, y_pred)
             self.y_calibration = y_val
             self.floor_area_calibration = X_val[self.floor_area_name].to_numpy()
@@ -709,6 +710,7 @@ but the name of the floor area variable is missing")
             y_pred = self.pipe.predict(X)
             y_true = y_transformed
             # We need the prediction in level to build the calibration function
+            # The prediction contains no retransformation correction
             self.y_pred_calibration = self.inverse_transform(X, y_pred)
             self.y_calibration = y
             self.floor_area_calibration = X[self.floor_area_name].to_numpy()
