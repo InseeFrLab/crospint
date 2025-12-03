@@ -911,7 +911,7 @@ in training")
 
         if add_retransformation_correction and retransformation_method not in ["Duan", "Miller", "calibration"]:
             raise ValueError(
-                "The retransformation_method argument must be either features 'Duan', 'Miller' or 'calibration'."
+                "The retransformation_method argument must be either 'Duan', 'Miller' or 'calibration'."
             )
 
         # Predict the local average
