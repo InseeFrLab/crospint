@@ -465,7 +465,7 @@ class ConvertToPandas(BaseEstimator, TransformerMixin):
         return self.feature_names
 
 
-def create_price_model_pipeline(
+def create_model_pipeline(
     model=lightgbm.LGBMRegressor(),
     presence_coordinates=True,
     convert_to_pandas_before_fit: bool = False
@@ -558,18 +558,18 @@ but the name of the floor area variable is missing")
         self.calibration_data = None
 
         print("    Initiating an unfitted price prediction pipeline.")
-        self.price_model_pipeline = create_price_model_pipeline(
+        self.pipe = create_model_pipeline(
             model=model,
             presence_coordinates=presence_coordinates,
             convert_to_pandas_before_fit=convert_to_pandas_before_fit
         )
 
-        self.preprocessor = self.price_model_pipeline[:-1]
-        self.model = self.price_model_pipeline[-1]
+        self.preprocessor = self.pipe[:-1]
+        self.model = self.pipe[-1]
 
     # Pass parameters to pipeline
     def set_params(self, dico):
-        self.price_model_pipeline.set_params(**dico)
+        self.pipe.set_params(**dico)
         return self
 
     def fit(
@@ -635,7 +635,7 @@ but the name of the floor area variable is missing")
             eval_names = ["Train"]
 
         start_time = time.monotonic()
-        if "LGBMRegressor" in str(self.price_model_pipeline[-1].__class__):
+        if "LGBMRegressor" in str(self.pipe[-1].__class__):
             print("    Let's train a LGBMRegressor!")
             callbacks = [
                 lightgbm.log_evaluation(period=log_evaluation_period),
@@ -648,7 +648,7 @@ but the name of the floor area variable is missing")
                 eval_sample_weight = None
 
             print("    Training the model") if verbose else None
-            self.price_model_pipeline[-1].fit(
+            self.pipe[-1].fit(
                 X_transformed,
                 y_transformed,
                 sample_weight=sample_weight,
@@ -659,10 +659,10 @@ but the name of the floor area variable is missing")
                 **kwargs
             )
 
-        elif "RandomForestRegressor" in str(self.price_model_pipeline[-1].__class__):
+        elif "RandomForestRegressor" in str(self.pipe[-1].__class__):
             print("    Let's train a RandomForestRegressor!")
             print("    Training the model") if verbose else None
-            self.price_model_pipeline[-1].fit(
+            self.pipe[-1].fit(
                 X_transformed,
                 y_transformed,
                 sample_weight=sample_weight
@@ -675,27 +675,27 @@ but the name of the floor area variable is missing")
 
         print("    Fit correction terms") if verbose else None
         if X_val is not None and y_val is not None:
-            y_pred = self.price_model_pipeline.predict(X_val)
+            y_pred = self.pipe.predict(X_val)
             y_true = y_val_transformed
             # We need the prediction in level to build the calibration function
             self.y_pred_calibration = self.inverse_transform(X_val, y_pred)
             self.y_calibration = y_val
             self.floor_area_calibration = X_val[self.floor_area_name].to_numpy()
-            if "date_conversion" in [name for name, _ in self.price_model_pipeline.steps]:
+            if "date_conversion" in [name for name, _ in self.pipe.steps]:
                 self.transaction_date_calibration = X_val[
-                    self.price_model_pipeline["date_conversion"].transaction_date_name
+                    self.pipe["date_conversion"].transaction_date_name
                 ]
             self.source_correction_terms = "Val"
         else:
-            y_pred = self.price_model_pipeline.predict(X)
+            y_pred = self.pipe.predict(X)
             y_true = y_transformed
             # We need the prediction in level to build the calibration function
             self.y_pred_calibration = self.inverse_transform(X, y_pred)
             self.y_calibration = y
             self.floor_area_calibration = X[self.floor_area_name].to_numpy()
-            if "date_conversion" in [name for name, _ in self.price_model_pipeline.steps]:
+            if "date_conversion" in [name for name, _ in self.pipe.steps]:
                 self.transaction_date_calibration = X[
-                    self.price_model_pipeline["date_conversion"].transaction_date_name
+                    self.pipe["date_conversion"].transaction_date_name
                 ]
             self.source_correction_terms = "Train"
 
@@ -762,6 +762,7 @@ but the name of the floor area variable is missing")
         y=None,
         y_pred=None,
         floor_area=None,
+        calibration_mode="price",
         quantile_start: float = 0,
         quantile_end: float = 1
     ):
@@ -769,6 +770,7 @@ but the name of the floor area variable is missing")
         self.assert_is_1d_array(y)
         self.assert_is_1d_array(y_pred)
         self.assert_is_1d_array(floor_area)
+        assert calibration_mode in ["price", "price_sqm"], "calibration_mode must be in ['price', 'price_sqm']"
         if y is None or y_pred is None or floor_area is None:
             print(f"Calibrating the model using {self.source_correction_terms} data used \
 in training")
@@ -778,17 +780,17 @@ in training")
 
         self.list_dates_calibration = None
         self.calibration_data = None
-
-        # Prepare data for calibration
-        y = np.log(y / floor_area)
-        y_pred = np.log(y_pred / floor_area)
+        if calibration_mode == "price_sqm":
+            y = y / floor_area
+            y_pred = y_pred / floor_area
 
         # Fit the calibration function on the whole distribution
         cal_func = IsotonicRegression(out_of_bounds="clip")
         cal_func.fit(
             np.sort(y_pred),
-            np.sort(y)
+            np.sort(y) / np.sort(y_pred)
         )
+        self.calibration_mode = calibration_mode
 
         if quantile_start > 0 or quantile_end < 1:
             print(f"Restricting the calibration to the [{quantile_start}; {quantile_end}] range")
@@ -801,18 +803,19 @@ in training")
             )
             cal_func.fit(
                 np.sort(y_pred),
-                np.sort(y)
+                np.sort(y) / np.sort(y_pred)
             )
 
         self.calibration_function = cal_func
 
         # Store calibration data
-        self.y_pred_calibrated = self.floor_area_calibration \
-            * np.exp(
-                self.calibration_function.predict(
-                    np.log(self.y_pred_calibration / self.floor_area_calibration)
-                )
-            )
+        if self.calibration_mode == "price":
+            self.y_pred_calibrated = self.y_pred_calibration \
+                * self.calibration_function.predict(self.y_pred_calibration)
+        elif self.calibration_mode == "price_sqm":
+            self.y_pred_calibrated = self.y_pred_calibration \
+                * self.calibration_function.predict(
+                    self.y_pred_calibration / self.floor_area_calibration)
 
         self.calibration_data = pl.DataFrame(
             {
@@ -894,7 +897,7 @@ in training")
 
         # Predict the local average
         print("    Predicting the target") if verbose else None
-        y_pred = self.price_model_pipeline.predict(X)
+        y_pred = self.pipe.predict(X)
 
         # Invert the target transformation
         print("    Invert the target transformation") if verbose \
@@ -906,30 +909,25 @@ in training")
             print("    The models includes a calibration step.") \
 
             # Calibrate the data
-            y_pred_calibrated = (
-                X[self.floor_area_name].to_numpy() \
-                # Compute calibrated price_sqm in level
-                * np.exp(
-                    # Calibrate this raw prediction
-                    self.calibration_function.predict(
-                        # Start from raw pipeline prediction (log_price_sqm)
-                        np.log(y_pred / X[self.floor_area_name].to_numpy())
-                    )
-                )
-            )
+            if self.calibration_mode == "price":
+                y_pred_calibrated = y_pred \
+                    * self.calibration_function.predict(y_pred)
+            elif self.calibration_mode == "price_sqm":
+                y_pred_calibrated = y_pred \
+                    * self.calibration_function.predict(y_pred / X[self.floor_area_name].to_numpy())
 
             if apply_time_calibration:
                 df_time_calibration = (
                     X
-                    .select(self.price_model_pipeline["date_conversion"].transaction_date_name)
+                    .select(self.pipe["date_conversion"].transaction_date_name)
                     # join_where does not keep row order, so we need a row number to put
                     # final predictions in the right order
                     .with_row_count(name="row_identifier", offset=0)
                     .with_columns(pl.Series(y_pred_calibrated).alias("y_pred_calibrated"))
                     .join_where(
                         self.time_calibration_data,
-                        pl.col(self.price_model_pipeline["date_conversion"].transaction_date_name) >= pl.col("start"),
-                        pl.col(self.price_model_pipeline["date_conversion"].transaction_date_name) < pl.col("end")
+                        pl.col(self.pipe["date_conversion"].transaction_date_name) >= pl.col("start"),
+                        pl.col(self.pipe["date_conversion"].transaction_date_name) < pl.col("end")
                     )
                     .with_columns(y_pred_calibrated=c.y_pred_calibrated * c.ratio)
                     .sort("row_identifier")
@@ -996,7 +994,7 @@ def predict_market_value(
     retransformation_method : {"Duan", "Miller"}, default="Duan"
         Method for retransformation correction.
 
-    This function can be used in two ways: 
+    This function can be used in two ways:
     - using the observed transaction date for each transaction (for instance in a test set);
       In this case `date_market_value` should be set to `None`, and the transaction data
       should be present in the features.
@@ -1010,7 +1008,7 @@ def predict_market_value(
 
     """
     # Extract the name of the feature containing the transaction name
-    transaction_date_name = model.price_model_pipeline["date_conversion"].transaction_date_name
+    transaction_date_name = model.pipe["date_conversion"].transaction_date_name
 
     if isinstance(X, pl.DataFrame):
         feature_names = X.columns
