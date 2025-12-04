@@ -877,9 +877,6 @@ in training")
             )
         )
 
-        print(self.calibration_data.shape[0])
-        print(calibration_data_ranges.shape[0])
-
         self.time_calibration_data = (
             calibration_data_ranges
             .group_by("start", "end")
