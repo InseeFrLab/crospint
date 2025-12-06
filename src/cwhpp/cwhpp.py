@@ -481,63 +481,34 @@ def create_model_pipeline(
     Returns:
     Pipeline: The constructed pipeline.
     """
+
+    steps = [
+        ("validate_features", ValidateFeatures())
+    ]
+
+    if presence_coordinates:
+        steps.append(
+            ("coord_rotation", AddCoordinatesRotation())
+        )
+
+    if presence_date:
+        steps.append(
+            ("date_conversion", ConvertDateToInteger())
+        )
+
     if convert_to_pandas_before_fit:
         print("    Adding a step for Pandas conversion at the end of the preprocessing")
+        steps.append(
+            ("pandas_converter", ConvertToPandas())
+        )
 
-        if presence_coordinates and presence_date:
-            pipe = Pipeline(
-                [
-                    ("validate_features", ValidateFeatures()),
-                    ("coord_rotation", AddCoordinatesRotation()),
-                    ("date_conversion", ConvertDateToInteger()),
-                    ("pandas_converter", ConvertToPandas()),
-                    ("model", model)
-                ]
-            )
-        elif presence_coordinates:
-            pipe = Pipeline(
-                [
-                    ("validate_features", ValidateFeatures()),
-                    ("coord_rotation", AddCoordinatesRotation()),
-                    ("pandas_converter", ConvertToPandas()),
-                    ("model", model)
-                ]
-            )
-        elif presence_date:
-            pipe = Pipeline(
-                [
-                    ("validate_features", ValidateFeatures()),
-                    ("date_conversion", ConvertDateToInteger()),
-                    ("pandas_converter", ConvertToPandas()),
-                    ("model", model)
-                ]
-            )
-    else:
-        if presence_coordinates and presence_date:
-            pipe = Pipeline(
-                [
-                    ("validate_features", ValidateFeatures()),
-                    ("coord_rotation", AddCoordinatesRotation()),
-                    ("date_conversion", ConvertDateToInteger()),
-                    ("model", model)
-                ]
-            )
-        elif presence_coordinates:
-            pipe = Pipeline(
-                [
-                    ("validate_features", ValidateFeatures()),
-                    ("coord_rotation", AddCoordinatesRotation()),
-                    ("model", model)
-                ]
-            )
-        elif presence_date:
-            pipe = Pipeline(
-                [
-                    ("validate_features", ValidateFeatures()),
-                    ("date_conversion", ConvertDateToInteger()),
-                    ("model", model)
-                ]
-            )
+    # Add the model
+    steps.append(
+        ("model", model)
+    )
+
+    # Create the pipeline
+    pipe = Pipeline(steps)
 
     return pipe
 
