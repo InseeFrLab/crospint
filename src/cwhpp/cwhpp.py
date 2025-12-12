@@ -728,7 +728,11 @@ but the name of the floor area variable is missing")
             assert isinstance(obj, np.ndarray), "Object is not a numpy array"
             assert obj.ndim == 1, "Array is not 1-dimensional"
 
-    def complete(df: pl.DataFrame, columns: list[str]):
+    def complete(
+        self,
+        df: pl.DataFrame,
+        columns: list[str]
+    ):
         uniq = [df.select(pl.col(c).unique()) for c in columns]
 
         # start grid
@@ -928,11 +932,9 @@ but the name of the floor area variable is missing")
         )
 
         # Add all missing combinations of categories
-        calibration_table = (
-            self.complete(
-                calibration_table,
-                calibration_variables_total
-            )
+        calibration_table = self.complete(
+            calibration_table,
+            calibration_variables_total
         )
 
         # Compute calibration ratios for missing combinations of categories
