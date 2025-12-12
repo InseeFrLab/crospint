@@ -32,7 +32,6 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn import metrics
 import lightgbm
 from datetime import datetime
-
 import copy
 
 def rotate_point(x, y, angle, center=None):
@@ -1034,7 +1033,18 @@ but the name of the floor area variable is missing")
                 "The retransformation_method argument must be either None, 'Duan', 'Miller' or 'calibration'."
             )
 
-        # Predict the local average
+        # Check that calibration variables are present in the data
+        if retransformation_method == "calibration":
+            assert self.is_calibrated, "The model is not calibrated"
+            missing_calvar = []
+            for var in self.calibration_variables:
+                if var not in X.columns:
+                    missing_calvar.extend(var)
+                    print(f"Variable {var} is missing in the calibration set.")
+            if len(missing_calvar) > 0:
+                raise ValueError("Some calibration variables are missing in the data.")
+
+        # Predict the price
         print("    Predicting the target") if verbose else None
         y_pred = self.pipe.predict(X)
 
@@ -1049,20 +1059,7 @@ but the name of the floor area variable is missing")
             if retransformation_method == "calibration":
                 print("    The models includes a calibration step.")
 
-                # Calibrate the predictions
-                y_pred = (
-                    X[self.floor_area_name].to_numpy() \
-                    # Compute calibrated price_sqm in level
-                    * np.exp(
-                        # Calibrate this raw prediction
-                        self.calibration_function.predict(
-                            # Start from raw pipeline prediction (log_price_sqm)
-                            np.log(y_pred / X[self.floor_area_name].to_numpy())
-                        )
-                    )
-                )
-
-                return y_pred
+                return self.calibrate_prediction(X, y_pred)
 
             if self.log_transform:
                 print("    The models includes a correction of the retransformation bias.") \
@@ -1080,9 +1077,7 @@ but the name of the floor area variable is missing")
                 print("    Average correction = ", round(100 * (global_correction - 1), 2), '%')
 
                 # Apply the correction to the prediction
-                y_pred = y_pred * global_correction
-
-                return y_pred
+                return y_pred * global_correction
             else:
                 print("    The model has no log-transformation.") \
                     if verbose else None
