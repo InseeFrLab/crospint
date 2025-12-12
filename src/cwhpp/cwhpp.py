@@ -743,7 +743,7 @@ but the name of the floor area variable is missing")
         X: pl.DataFrame = None,
         y=None,
         calibration_quantiles: list = None,
-        calibration_variables: list = None,
+        calibration_variables: list = [],
         bounds: tuple = (0.5, 1.5),
         verbose: bool = True
     ):
@@ -760,12 +760,11 @@ but the name of the floor area variable is missing")
 
         self.assert_is_1d_array(y)
         assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
+        assert isinstance(calibration_variables, list), "calibration_variables must be a list"
 
         # Check that X contains all necessary data
         missing_vars = []
-        for var in [
-            calibration_variables, self.model_features
-        ]:
+        for var in calibration_variables + self.model_features:
             if var not in X.columns:
                 missing_vars.extend(var)
                 print(f"Variable {var} is missing in the calibration set.")
