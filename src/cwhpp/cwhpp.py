@@ -741,69 +741,279 @@ but the name of the floor area variable is missing")
 
     def calibrate_model(
         self,
+        X: pl.dataFrame = None,
         y=None,
-        y_pred=None,
-        floor_area=None,
-        quantile_start: float = 0,
-        quantile_end: float = 1
+        calibration_quantiles: list = None,
+        calibration_variables: list = None,
+        bounds: tuple = (0.5, 1.5),
+        verbose: bool = True
     ):
 
+        assert self.is_model_fitted, "The model must be trained before being calibrated"
+
+        if (X is None or y is None):
+            if self.X_val is not None and self.y_val is not None:
+                print("    Using the validation dataset as calibration set.") if verbose else None
+                X = copy.deepcopy(self.X_val)
+                y = copy.deepcopy(self.y_val)
+        else:
+            raise ValueError("    Calibration data is missing.")
+
         self.assert_is_1d_array(y)
-        self.assert_is_1d_array(y_pred)
-        self.assert_is_1d_array(floor_area)
-        if y is None or y_pred is None or floor_area is None:
-            print(f"Calibrating the model using {self.source_correction_terms} data used \
-in training")
-            y = self.y_calibration
-            y_pred = self.y_pred_calibration
-            floor_area = self.floor_area_calibration
+        assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
 
-        self.list_dates_calibration = None
-        self.calibration_data = None
+        # Check that X contains all necessary data
+        missing_vars = []
+        for var in [
+            calibration_variables, self.model_features
+        ]:
+            if var not in X.columns:
+                missing_vars.extend(var)
+                print(f"Variable {var} is missing in the calibration set.")
+        if len(missing_vars) > 0:
+            raise ValueError("Some variables are missing in the calibration set.")
 
-        # Prepare data for calibration
-        y = np.log(y / floor_area)
-        y_pred = np.log(y_pred / floor_area)
+        calibration_quantiles = sorted(set(calibration_quantiles))
+        assert np.min(calibration_quantiles) > 0, "The lowest quantile must be strictly positive."
+        assert np.max(calibration_quantiles) < 1, "The lowest quantile must be lower than 1."
 
-        # Fit the calibration function on the whole distribution
-        cal_func = IsotonicRegression(out_of_bounds="clip")
-        cal_func.fit(
-            np.sort(y_pred),
-            np.sort(y)
+        assert len(bounds) == 2, 'Bounds must be a tuple of length 2'
+        lower_bound, upper_bound = bounds
+
+        # Step 1: Predicting prices on the calibration set
+        print("    Predicting prices on the calibration set") if verbose else None
+        raw_predictions = self.predict(
+            X,
+            add_retransformation_correction=False,
+            retransformation_method=None,
+            verbose=False
+        )
+        # Add the prediction to the calibration set
+        X_cal = X.with_columns(
+            predicted_price=pl.Series(raw_predictions),
+            target=pl.Series(y)
+        ).with_columns(
+            predicted_price_sqm=c.predicted_price/pl.col(self.floor_area_name)
         )
 
-        if quantile_start > 0 or quantile_end < 1:
-            print(f"    Restricting the calibration to the [{quantile_start}; {quantile_end}] range")
-            lower_bound = cal_func.predict(np.quantile(y_pred, [quantile_start])).tolist()[0]
-            upper_bound = cal_func.predict(np.quantile(y_pred, [quantile_end])).tolist()[0]
-            cal_func = IsotonicRegression(
-                out_of_bounds="clip",
-                y_min=lower_bound,
-                y_max=upper_bound
+        # Step 2: Building the prediction quantiles
+        print("    Building the prediction quantiles") if verbose else None
+
+        calibration_quantiles = sorted(set(calibration_quantiles))
+        quantile_labels = [f'0-{calibration_quantiles[0]}'] + [
+            f'{calibration_quantiles[i]}-{calibration_quantiles[i+1]}'
+            for i in range(len(calibration_quantiles)-1)
+        ] + [f'{calibration_quantiles[-1]}-1']
+
+        quantile_values = np.quantile(X_cal["predicted_price"], calibration_quantiles).tolist()
+
+        table_quantiles_predicted_price = pl.DataFrame(
+            {
+                "interval_predicted_price": pl.Series(quantile_labels),
+                "lower_bound_predicted_price": pl.Series([-np.inf] + quantile_values),
+                "upper_bound_predicted_price": pl.Series(quantile_values + [np.inf])
+            }
+        )
+
+        # Add the quantile labels and bounds on the data
+        X_cal = (
+            X_cal
+            .with_row_index(name="row_identifier", offset=0)
+            .with_columns(
+                interval_predicted_price=c.predicted_price.cut(
+                    quantile_values,
+                    labels=quantile_labels
+                ).cast(pl.String)
             )
+            .join(
+                table_quantiles_predicted_price,
+                on="interval_predicted_price",
+                how="left"
+            )
+            .sort("row_identifier")
+        )
+
+        # Step 3: Performing the calibration
+        print("    Performing the calibration") if verbose else None
+
+        # Initialize the calibrated price
+        X_cal = X_cal.with_columns(
+            predicted_price_cal=c.predicted_price,
+            predicted_price_sqm_cal=c.predicted_price_sqm,
+            calibration_ratio=pl.lit(1)
+        )
+
+        # Perform the iterative calibration
+        for i in range(20):
+            # Train an isotonic regression mapping the distribution of predicted prices
+            # to the distribution of observed prices
+            cal_func = IsotonicRegression(out_of_bounds="clip")
             cal_func.fit(
-                np.sort(y_pred),
-                np.sort(y)
+                np.sort(X_cal["predicted_price_cal"].to_numpy()),
+                np.sort(X_cal["target"].to_numpy())
             )
 
-        self.calibration_function = cal_func
+            # Use the isotonic regression to compute raw calibration ratios
+            calibration_ratio_isotonic = (
+                cal_func.predict(X_cal["predicted_price_cal"].to_numpy())
+                / X_cal["predicted_price_cal"].to_numpy()
+            )
 
-        # Store calibration data
-        self.y_pred_calibrated = self.floor_area_calibration \
-            * np.exp(
-                self.calibration_function.predict(
-                    np.log(self.y_pred_calibration / self.floor_area_calibration)
+            # Perform distributional calibration
+            X_cal = (
+                X_cal
+                # Update the calibration ratio
+                .with_columns(
+                    calibration_ratio=(
+                        (c.calibration_ratio*pl.Series(calibration_ratio_isotonic))
+                        .clip(lower_bound=lower_bound, upper_bound=upper_bound)
+                    )
+                )
+                # Adjust predictions
+                .with_columns(
+                    predicted_price_cal=c.predicted_price*c.calibration_ratio,
+                    predicted_price_sqm_cal=c.predicted_price_sqm*c.calibration_ratio
                 )
             )
 
-        self.calibration_data = pl.DataFrame(
-            {
-                "y": self.y_calibration,
-                "y_pred_calibration": self.y_pred_calibration,
-                "y_pred_calibrated": self.y_pred_calibrated,
-                "transaction_date": self.transaction_date_calibration
-            }
+            # Adjust the predictions to match the marginal distribution of each calibration variable
+            for calibration_variable in calibration_variables:
+                X_cal = (
+                    X_cal
+                    # Compute marginal distributions
+                    .with_columns(
+                        total_pred_temp=pl.col('predicted_price_cal').sum().over(calibration_variable),
+                        total_obs_temp=pl.col('target').sum().over(calibration_variable),
+                    )
+                    .with_columns(
+                        # Update the calibration ratio
+                        calibration_ratio=(
+                            (c.calibration_ratio*(c.total_obs_temp / c.total_pred_temp))
+                            .clip(lower_bound=lower_bound, upper_bound=upper_bound)
+                        )
+                    )
+                    # Adjust predictions
+                    .with_columns(
+                        predicted_price_cal=c.predicted_price*c.calibration_ratio,
+                        predicted_price_sqm_cal=c.predicted_price_sqm*c.calibration_ratio
+                    )
+                )
+        
+        # Compute final calibration
+        X_cal = X_cal.with_columns(
+            calibration_ratio_final=c.predicted_price_cal/c.predicted_price
         )
+        self.X_cal = X_cal
+
+        # Step 4: Building the calibration table
+        print("    Building the calibration table") if verbose else None
+
+        calibration_variables_total = (
+            ['interval_predicted_price'] +
+            calibration_variables
+        )
+
+        # Build an aggregate calibration table
+        calibration_table = (
+            X_cal
+            .group_by(calibration_variables_total)
+            .agg(
+                total_floor_area=pl.col(self.floor_area_name).sum(),
+                nb_transactions=pl.len(),
+                predicted_price=c.predicted_price.sum(),
+                predicted_price_cal=c.predicted_price_cal.sum()
+            )
+            .with_columns(
+                calibration_ratio=(c.predicted_price_cal/c.predicted_price),
+                calibration_level=pl.lit(", ".join(calibration_variables_total))
+            )
+        )
+
+        # Add all missing combinations of categories
+        calibration_table = (
+            self.complete(
+                calibration_table,
+                calibration_variables_total
+            )
+        )
+
+        # Compute calibration ratios for missing combinations of categories
+        for i in range(1, len(calibration_variables_total)):
+            print(calibration_variables_total[0:-i])
+            calibration_table = (
+                calibration_table
+                .with_columns(
+                    calibration_ratio_temp=(
+                        c.predicted_price_cal.sum().over(calibration_variables_total[0:-i]) /
+                        c.predicted_price.sum().over(calibration_variables_total[0:-i])
+                    )
+                )
+                .with_columns(
+                    calibration_ratio=(
+                        pl.when(c.calibration_ratio.is_null(), c.calibration_ratio_temp.is_not_nan())
+                        .then(c.calibration_ratio_temp)
+                        .otherwise(c.calibration_ratio)
+                    )
+                )
+                .with_columns(
+                    calibration_level=(
+                        pl.when(c.calibration_level.is_null(), ~c.calibration_ratio.is_null())
+                        .then(
+                            pl.lit(", ".join(calibration_variables_total[0:-i]))
+                        ).otherwise(c.calibration_level)
+                    )
+                )
+            )
+
+        # Keep only useful variables
+        calibration_table = (
+            calibration_table
+            .select(
+                calibration_variables_total + ["calibration_ratio", "calibration_level"]
+            )
+            .join(
+                table_quantiles_predicted_price,
+                on="interval_predicted_price",
+                how="left"
+            )
+        )
+
+        self.is_calibrated = True
+        self.X_calibration = X_cal
+        self.y_calibration = y
+        self.quantile_values = quantile_values
+        self.quantile_labels = quantile_labels
+        self.table_quantiles_predicted_price = table_quantiles_predicted_price
+        self.calibration_variables = calibration_variables
+        self.calibration_table = calibration_table
+
+    def calibrate_prediction(
+        self,
+        X,
+        y,
+
+    ):
+
+        X = (
+            X
+            .with_columns(
+                y=pl.Series(y),
+                interval_predicted_price=c.predicted_price.cut(
+                    breaks=self.quantile_values,
+                    labels=self.quantile_labels
+                ).cast(pl.String)
+            )
+            .join(
+                self.calibration_table,
+                on=["interval_predicted_price"] + self.calibration_variables,
+                how="left"
+            )
+            .with_columns(
+                y=c.y*c.calibration_ratio
+            )
+        )
+
+        return X["y"].to_numpy()
 
     def predict(
         self,
