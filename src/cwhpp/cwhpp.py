@@ -815,59 +815,12 @@ in training")
             }
         )
 
-    def perform_time_calibration(
-        self,
-        list_dates_calibration: list = None
-    ):
-        if self.calibration_data is None:
-            raise ValueError("The model must be calibrated before performing time calibration")
-        if list_dates_calibration is None:
-            raise ValueError("list_dates_calibration cannot be None")
-
-        self.list_dates_calibration = np.unique(list_dates_calibration).tolist()
-
-        df_time_intervals = (
-            pl.DataFrame({"start": [None] + self.list_dates_calibration})
-            .with_columns(
-                c.start.str.strptime(pl.Date, format="%Y-%m-%d")
-                .fill_null(pl.Series(["0001-01-01"]).str.strptime(pl.Date, format="%Y-%m-%d"))
-            )
-            .sort("start")
-            .with_columns(
-                end=c.start.shift(-1)
-                .fill_null(pl.Series(["3000-01-01"]).str.strptime(pl.Date, format="%Y-%m-%d"))
-            )
-        )
-
-        calibration_data_ranges = (
-            self.calibration_data
-            .join_where(
-                df_time_intervals,
-                pl.col("transaction_date") >= pl.col("start"),
-                pl.col("transaction_date") < pl.col("end")
-            )
-        )
-
-        self.time_calibration_data = (
-            calibration_data_ranges
-            .group_by("start", "end")
-            .agg(
-                total_obs=c.y.sum(),
-                total_pred=c.y_pred_calibrated.sum()
-            )
-            .with_columns(
-                ratio=c.total_obs/c.total_pred
-            )
-            .sort("start")
-        )
-
     def predict(
         self,
         X,
         iteration_range=None,
         add_retransformation_correction: bool = False,
         retransformation_method: str = None,
-        apply_time_calibration: bool = False,
         verbose: bool = True,
         **kwargs
     ):
@@ -909,30 +862,7 @@ in training")
                     )
                 )
 
-                if apply_time_calibration:
-                    df_time_calibration = (
-                        X
-                        .select(self.pipe["date_conversion"].date_name)
-                        # join_where does not keep row order, so we need a row number to put
-                        # final predictions in the right order
-                        .with_row_count(name="row_identifier", offset=0)
-                        .with_columns(pl.Series(y_pred).alias("y_pred"))
-                        .join_where(
-                            self.time_calibration_data,
-                            pl.col(self.pipe["date_conversion"].date_name) >= pl.col("start"),
-                            pl.col(self.pipe["date_conversion"].date_name) < pl.col("end")
-                        )
-                        .with_columns(y_pred_calibrated=c.y_pred_calibrated * c.ratio)
-                        .sort("row_identifier")
-                        .drop("row_identifier")
-                    )
-                    if X.shape[0] != df_time_calibration.shape[0]:
-                        raise ValueError("    There are duplicates in the time calibration step")
-                    if df_time_calibration.filter(c.ratio.is_null()).shape[0] > 0:
-                        raise ValueError("    There are missing values in the time calibration step")
-                    return df_time_calibration["y_pred_calibrated"].to_numpy()
-                else:
-                    return y_pred
+                return y_pred
 
             if self.log_transform:
                 print("    The models includes a correction of the retransformation bias.") \
