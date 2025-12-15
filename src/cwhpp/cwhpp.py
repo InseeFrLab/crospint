@@ -889,6 +889,7 @@ but the name of the floor area variable is missing")
         )
         self.calibration_model = Pipeline(
             steps=[
+                ("validate_features", ValidateFeatures()),
                 ("pandas_converter", ConvertToPandas()),
                 ("preprocess", preprocessor),
                 (
