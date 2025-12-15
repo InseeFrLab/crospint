@@ -926,28 +926,25 @@ but the name of the floor area variable is missing")
     def calibrate_prediction(
         self,
         X,
-        y,
-
+        y
     ):
 
+        # Add the predictions to the dataframe
         X = (
             X
             .with_columns(predicted_price=pl.Series(y))
-            .with_columns(
-                interval_predicted_price=c.predicted_price.cut(
-                    breaks=self.quantile_values,
-                    labels=self.quantile_labels
-                ).cast(pl.String)
+            .select(
+                self.calibration_variables + ["predicted_price"]
             )
-            .join(
-                self.calibration_table,
-                on=["interval_predicted_price"] + self.calibration_variables,
-                how="left"
-            )
-            .with_columns(y=c.y*c.calibration_ratio)
         )
 
-        return X["y"].to_numpy()
+        # Predict calibration ratios
+        predicted_calibration_ratios = self.calibration_model.predict(X)
+
+        # Compute calibrated predictions by applying calibration ratios
+        y_calibrated = y * predicted_calibration_ratios
+
+        return y_calibrated
 
     def predict(
         self,
