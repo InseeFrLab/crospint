@@ -515,6 +515,35 @@ def create_model_pipeline(
     return pipe
 
 
+def create_calibration_pipeline(
+    model=lightgbm.LGBMRegressor()
+):
+
+    # A target encoding step for categorical features may be useful for fast inference
+    preprocessor = ColumnTransformer(
+        [
+            (
+                "categorical",
+                TargetEncoder(
+                    smooth=1.0,
+                    target_type="continuous"
+                ),
+                make_column_selector(dtype_include=["object", "category"])
+            )
+        ],
+        remainder="passthrough"
+    )
+    pipe = Pipeline(
+        steps=[
+            ("validate_features", ValidateFeatures()),
+            ("pandas_converter", ConvertToPandas()),
+            ("preprocess", preprocessor),
+            ("model", model)
+        ]
+    )
+    return pipe
+
+
 class TwoStepsModel(BaseEstimator):
     """
     A custom estimator that combines two steps: transformation of the target
