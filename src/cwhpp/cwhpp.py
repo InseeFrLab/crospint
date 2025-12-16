@@ -24,6 +24,7 @@
 import time
 import math
 import numpy as np
+import pandas as pd
 import polars as pl
 from polars import col as c
 from sklearn.base import BaseEstimator, TransformerMixin
