@@ -895,65 +895,16 @@ but the name of the floor area variable is missing")
         )
 
         # Perform the iterative calibration
+        # Here we could improve the code to use convergence criteria
         for i in range(20):
-            # Train an isotonic regression mapping the distribution of predicted prices
-            # to the distribution of observed prices
-            cal_func = IsotonicRegression(out_of_bounds="clip")
-            cal_func.fit(
-                np.sort(X_cal["predicted_price_cal"].to_numpy()),
-                np.sort(X_cal["target"].to_numpy())
+            X_cal = compute_calibration_ratios(
+                X=X_cal,
+                calibration_variables=calibration_variables,
+                prediction_variable="predicted_price_cal",
+                target_variable="target",
+                bounds=bounds
             )
 
-            # Use the isotonic regression to compute raw calibration ratios
-            calibration_ratio_isotonic = (
-                cal_func.predict(X_cal["predicted_price_cal"].to_numpy())
-                / X_cal["predicted_price_cal"].to_numpy()
-            )
-
-            # Perform distributional calibration
-            X_cal = (
-                X_cal
-                # Update the calibration ratio
-                .with_columns(
-                    calibration_ratio=(
-                        (c.calibration_ratio*pl.Series(calibration_ratio_isotonic))
-                        .clip(lower_bound=lower_bound, upper_bound=upper_bound)
-                    )
-                )
-                # Adjust predictions
-                .with_columns(
-                    predicted_price_cal=c.predicted_price*c.calibration_ratio,
-                    predicted_price_sqm_cal=c.predicted_price_sqm*c.calibration_ratio
-                )
-            )
-
-            # Adjust the predictions to match the marginal distribution of each calibration variable
-            for calibration_variable in calibration_variables:
-                X_cal = (
-                    X_cal
-                    # Compute marginal distributions
-                    .with_columns(
-                        total_pred_temp=(
-                            pl.col('predicted_price_cal').sum().over(calibration_variable)
-                        ),
-                        total_obs_temp=(
-                            pl.col('target').sum().over(calibration_variable)
-                        ),
-                    )
-                    .with_columns(
-                        # Update the calibration ratio
-                        calibration_ratio=(
-                            (c.calibration_ratio*(c.total_obs_temp / c.total_pred_temp))
-                            .clip(lower_bound=lower_bound, upper_bound=upper_bound)
-                        )
-                    )
-                    # Adjust predictions
-                    .with_columns(
-                        predicted_price_cal=c.predicted_price*c.calibration_ratio,
-                        predicted_price_sqm_cal=c.predicted_price_sqm*c.calibration_ratio
-                    )
-                )
-        
         # Compute final calibration ratios
         X_cal = X_cal.with_columns(
             calibration_ratio_final=c.predicted_price_cal/c.predicted_price
