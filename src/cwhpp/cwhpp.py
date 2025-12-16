@@ -548,7 +548,8 @@ def compute_calibration_ratios(
     X: pl.dataFrame = None,
     calibration_variables: list = None,
     perform_distributional_calibration: bool = True,
-    prediction_variable="predicted_price_cal",
+    raw_prediction_variable="predicted_price",
+    cal_prediction_variable="predicted_price_cal",
     target_variable="target",
     bounds=(0.5, 1.5)
 ):
@@ -563,14 +564,14 @@ def compute_calibration_ratios(
         # to the distribution of observed prices
         cal_func = IsotonicRegression(out_of_bounds="clip")
         cal_func.fit(
-            np.sort(X[prediction_variable].to_numpy()),
+            np.sort(X[cal_prediction_variable].to_numpy()),
             np.sort(X[target_variable].to_numpy())
         )
 
         # Use the isotonic regression to compute raw calibration ratios
         calibration_ratio_isotonic = (
-            cal_func.predict(X[prediction_variable].to_numpy())
-            / X[prediction_variable].to_numpy()
+            cal_func.predict(X[cal_prediction_variable].to_numpy())
+            / X[cal_prediction_variable].to_numpy()
         )
 
         # Perform distributional calibration
@@ -583,9 +584,9 @@ def compute_calibration_ratios(
                     .clip(lower_bound=lower_bound, upper_bound=upper_bound)
                 )
             )
-            # Adjust predictions
+            # Adjust raw predictions
             .with_columns(
-                (c.predicted_price*c.calibration_ratio).alias(prediction_variable)
+                (pl.col(raw_prediction_variable)*c.calibration_ratio).alias(cal_prediction_variable)
             )
         )
 
@@ -597,7 +598,7 @@ def compute_calibration_ratios(
                 # Compute marginal distributions
                 .with_columns(
                     total_pred_temp=(
-                        pl.col(prediction_variable).sum().over(calibration_variable)
+                        pl.col(cal_prediction_variable).sum().over(calibration_variable)
                     ),
                     total_obs_temp=(
                         pl.col(target_variable).sum().over(calibration_variable)
@@ -610,9 +611,11 @@ def compute_calibration_ratios(
                         .clip(lower_bound=lower_bound, upper_bound=upper_bound)
                     )
                 )
-                # Adjust predictions
+                # Adjust raw predictions
                 .with_columns(
-                    (c.predicted_price*c.calibration_ratio).alias(prediction_variable),
+                    (
+                        pl.col(raw_prediction_variable)*c.calibration_ratio
+                    ).alias(cal_prediction_variable)
                 )
             )
     return X
@@ -900,7 +903,8 @@ but the name of the floor area variable is missing")
             X_cal = compute_calibration_ratios(
                 X=X_cal,
                 calibration_variables=calibration_variables,
-                prediction_variable="predicted_price_cal",
+                raw_prediction_variable="predicted_price",
+                cal_prediction_variable="predicted_price_cal",
                 target_variable="target",
                 bounds=bounds
             )
