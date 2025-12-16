@@ -544,6 +544,80 @@ def create_calibration_pipeline(
     return pipe
 
 
+def compute_calibration_ratios(
+    X: pl.dataFrame = None,
+    calibration_variables: list = None,
+    perform_distributional_calibration: bool = True,
+    prediction_variable="predicted_price_cal",
+    target_variable="target",
+    bounds=(0.5, 1.5)
+):
+
+    assert perform_distributional_calibration or calibration_variables is not None, \
+        "At least one form of calibration should be performed"
+
+    lower_bound, upper_bound = bounds
+
+    if perform_distributional_calibration:
+        # Train an isotonic regression mapping the distribution of predicted prices
+        # to the distribution of observed prices
+        cal_func = IsotonicRegression(out_of_bounds="clip")
+        cal_func.fit(
+            np.sort(X[prediction_variable].to_numpy()),
+            np.sort(X[target_variable].to_numpy())
+        )
+
+        # Use the isotonic regression to compute raw calibration ratios
+        calibration_ratio_isotonic = (
+            cal_func.predict(X[prediction_variable].to_numpy())
+            / X[prediction_variable].to_numpy()
+        )
+
+        # Perform distributional calibration
+        X = (
+            X
+            # Update the calibration ratio
+            .with_columns(
+                calibration_ratio=(
+                    (c.calibration_ratio*pl.Series(calibration_ratio_isotonic))
+                    .clip(lower_bound=lower_bound, upper_bound=upper_bound)
+                )
+            )
+            # Adjust predictions
+            .with_columns(
+                (c.predicted_price*c.calibration_ratio).alias(prediction_variable)
+            )
+        )
+
+    if calibration_variables is not None:
+        # Adjust the predictions to match the marginal distribution of each calibration variable
+        for calibration_variable in calibration_variables:
+            X = (
+                X
+                # Compute marginal distributions
+                .with_columns(
+                    total_pred_temp=(
+                        pl.col(prediction_variable).sum().over(calibration_variable)
+                    ),
+                    total_obs_temp=(
+                        pl.col(target_variable).sum().over(calibration_variable)
+                    ),
+                )
+                .with_columns(
+                    # Update the calibration ratio
+                    calibration_ratio=(
+                        (c.calibration_ratio*(c.total_obs_temp / c.total_pred_temp))
+                        .clip(lower_bound=lower_bound, upper_bound=upper_bound)
+                    )
+                )
+                # Adjust predictions
+                .with_columns(
+                    (c.predicted_price*c.calibration_ratio).alias(prediction_variable),
+                )
+            )
+    return X
+
+
 class TwoStepsModel(BaseEstimator):
     """
     A custom estimator that combines two steps: transformation of the target
