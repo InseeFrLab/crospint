@@ -842,6 +842,15 @@ but the name of the floor area variable is missing")
         X: pl.DataFrame = None,
         y=None,
         calibration_variables: list = [],
+        calibration_model=lightgbm.LGBMRegressor(
+            n_estimators=20,
+            num_leaves=1023,
+            max_depth=12,
+            learning_rate=1,
+            min_child_samples=20,
+            max_bins=10000,
+            random_state=123456
+        ),
         bounds: tuple = (0.5, 1.5),
         verbose: bool = True
     ):
