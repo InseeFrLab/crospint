@@ -932,6 +932,7 @@ but the name of the floor area variable is missing")
         )
 
         # Step 3: Train the calibration model
+        print("    Training the calibration model") if verbose else None
         self.calibration_model = create_calibration_pipeline(
             model=calibration_model
         )
