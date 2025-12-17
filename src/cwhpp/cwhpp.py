@@ -537,7 +537,7 @@ def create_model_pipeline(
 
 
 def create_calibration_pipeline(
-    model=lightgbm.LGBMRegressor(),
+    model=lightgbm.LGBMRegressor()
 ):
 
     steps = [
@@ -545,6 +545,7 @@ def create_calibration_pipeline(
         ("pandas_converter", ConvertToPandas())
     ]
 
+    # Add the model
     steps.append(("model", model))
     pipe = Pipeline(
         steps=steps
@@ -876,8 +877,8 @@ but the name of the floor area variable is missing")
 
         self.assert_is_1d_array(y)
         assert isinstance(X, pl.DataFrame), "X must be a Polars DataFrame"
-        assert isinstance(calibration_variables, list), "calibration_variables must be a list"
         assert X.shape[0] == len(y), "y and X must have the same length"
+        assert isinstance(calibration_variables, list), "calibration_variables must be a list"
 
         # Check that X contains all necessary data
         missing_vars = []
