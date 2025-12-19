@@ -904,7 +904,7 @@ but the name of the floor area variable is missing")
             random_state=123456,
             verbose=-1
         ),
-        bounds: tuple = (0.5, 1.5),
+        r2_threshold=1.0,
         verbose: bool = True
     ):
 
@@ -1024,11 +1024,30 @@ You may try again with looser bounds, higher convergence thresholds or less cali
             model=calibration_model
         )
 
+        # Partial fitting of the pipeline
+        # Refactor that part as soon as https://github.com/microsoft/LightGBM/pull/6857
+        # is merged
+        self.calibration_model[:-1].fit(
+            X_cal.select(calibration_variables + ["predicted_price"]),
+            X_cal["calibration_ratio_final"].to_numpy()
+        )
+        eval_set = (
+                self.calibration_model[:-1].transform(X_cal),
+                X_cal["calibration_ratio_final"].to_numpy()
+        )
+
         # Train the model
         # This model is intentionally overfit
         self.calibration_model.fit(
             X_cal.select(calibration_variables + ["predicted_price"]),
-            X_cal["calibration_ratio_final"].to_numpy()
+            X_cal["calibration_ratio_final"].to_numpy(),
+            model__callbacks=[
+                stop_on_train_r2(r2_threshold)
+            ],
+            model__eval_metric=r2_eval,
+            model__eval_set=eval_set,
+            model__eval_names=["Train"],
+
         )
         # Predict calibration ratios on the calibration set
         predicted_ratios = self.calibration_model.predict(X_cal)
