@@ -445,11 +445,15 @@ class ConvertToPandas(BaseEstimator, TransformerMixin):
             if dtype in [pl.Utf8]
         ]
 
-        # Extract categories
-        for col in self.string_cols:
-
-            # Store the categories of the categorial variable
-            self.category_mappings[col] = sorted(X[col].unique().to_numpy().tolist())
+        if len(self.string_cols) > 0:
+            # Extract categories
+            for col in self.string_cols:
+                # Replace null values with a non-null value
+                X = (
+                    X
+                    .with_columns(pl.col(col).fill_null("missing").alias(col))
+                )
+                self.category_mappings[col] = sorted(X[col].unique().to_numpy().tolist())
 
         self.is_fitted = True
         return self
@@ -464,8 +468,14 @@ class ConvertToPandas(BaseEstimator, TransformerMixin):
         if not isinstance(X, pl.DataFrame):
             raise TypeError("Input must be a Polars DataFrame")
 
-        df = X.to_pandas()
+        for col in self.string_cols:
+            # Replace null values in categorical features with a non-null value
+            X = (
+                    X
+                    .with_columns(pl.col(col).fill_null("missing").alias(col))
+                )
 
+        df = X.to_pandas()
         # Convert all string variables to categorical with the same encoding
         for col in self.string_cols:
             df[col] = pd.Categorical(
