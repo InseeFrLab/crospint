@@ -23,20 +23,19 @@
 
 import time
 import math
+from datetime import datetime
+import copy
 import numpy as np
 import pandas as pd
 import polars as pl
 from polars import col as c
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer, make_column_selector
-from sklearn.preprocessing import TargetEncoder
 from sklearn.isotonic import IsotonicRegression
+from sklearn.metrics import r2_score
 from sklearn import metrics
 import lightgbm
-from datetime import datetime
-import copy
-
+from lightgbm.callback import EarlyStopException
 
 def rotate_point(x, y, angle, center=None):
     """
