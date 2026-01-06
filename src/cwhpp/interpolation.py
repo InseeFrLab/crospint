@@ -538,20 +538,3 @@ def create_model_pipeline(
     pipe = Pipeline(steps)
 
     return pipe
-
-
-def create_calibration_pipeline(
-    model=lightgbm.LGBMRegressor()
-):
-
-    steps = [
-        ("validate_features", ValidateFeatures()),
-        ("pandas_converter", ConvertToPandas())
-    ]
-
-    # Add the model
-    steps.append(("model", model))
-    pipe = Pipeline(
-        steps=steps
-    )
-    return pipe

@@ -32,7 +32,25 @@ from sklearn.metrics import r2_score
 from sklearn import metrics
 import lightgbm
 from lightgbm.callback import EarlyStopException
+from .interpolation import create_model_pipeline, \
+    ValidateFeatures, \
+    ConvertToPandas
 
+def create_calibration_pipeline(
+    model=lightgbm.LGBMRegressor()
+):
+
+    steps = [
+        ("validate_features", ValidateFeatures()),
+        ("pandas_converter", ConvertToPandas())
+    ]
+
+    # Add the model
+    steps.append(("model", model))
+    pipe = Pipeline(
+        steps=steps
+    )
+    return pipe
 
 def compute_calibration_ratios(
     X: pl.DataFrame = None,
