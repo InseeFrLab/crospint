@@ -520,11 +520,13 @@ def create_model_pipeline(
         ("validate_features", ValidateFeatures())
     ]
 
+    # Add a coordinates rotation step if chosen
     if presence_coordinates:
         steps.append(
             ("coord_rotation", AddCoordinatesRotation())
         )
 
+    # Add a date conversion step if chosen
     if presence_date:
         steps.append(
             ("date_conversion", ConvertDateToInteger())
