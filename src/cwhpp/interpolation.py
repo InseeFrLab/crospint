@@ -460,19 +460,13 @@ class ConvertToPandas(BaseEstimator, TransformerMixin):
         if not isinstance(X, pl.DataFrame):
             raise TypeError("Input must be a Polars DataFrame")
 
-        for col in self.string_cols:
-            # Replace null values in categorical features with a non-null value
-            X = (
-                    X
-                    .with_columns(pl.col(col).fill_null("missing").alias(col))
-                )
-
         df = X.to_pandas()
         # Convert all string variables to categorical with the same encoding
         for col in self.string_cols:
             df[col] = pd.Categorical(
                 df[col],
-                categories=self.category_mappings[col]
+                categories=self.category_mappings[col],
+                ordered=False
             )
 
         # Convert to pandas (all numeric / safe types now)
