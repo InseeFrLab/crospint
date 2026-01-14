@@ -240,8 +240,9 @@ Only marginal calibration will be performed.") if verbose else None
     max_conv = 10 * convergence_rate
     while max_conv > convergence_rate:
         if nb_iter >= max_iter:
-            raise RuntimeError(f"    Algorithm failed to converge after {max_iter} iterations. \
+            print(f"    Algorithm failed to converge after {max_iter} iterations. \
 You may try again with looser bounds, higher convergence thresholds or less calibration variables.")
+            return model, False
 
         X_cal = compute_calibration_ratios(
             X=X_cal,
@@ -296,6 +297,8 @@ You may try again with looser bounds, higher convergence thresholds or less cali
             ["target", "predicted_price_cal", "calibration_ratio_final"]
         )
     )
+    return model, True
+
 
 def train_calibration_model(
     model,
@@ -365,6 +368,7 @@ def train_calibration_model(
         )
     )
     model.is_calibrated = True
+    return model
 
 
 class TwoStepsModel(BaseEstimator):
