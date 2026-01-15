@@ -315,7 +315,7 @@ def train_calibration_model(
     ),
     validation_share=0,
     evaluation_period=5,
-    r2_threshold=0.95,
+    r2_threshold=1,
     early_stopping_rounds=10,
     verbose=True
 ):
