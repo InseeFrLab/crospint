@@ -5,4 +5,4 @@ uv sync
 cd ..
 mkdir -p .vscode
 
-echo '{"python.defaultInterpreterPath":"/home/onyxia/work/crospint/.venv/bin/python"}' >> .vscode/settings.json
+echo '{"python.defaultInterpreterPath":"/home/onyxia/work/crospint/.venv/bin/python", "python.terminal.activateEnvironment": true}' >> .vscode/settings.json
